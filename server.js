@@ -27,7 +27,8 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002",
-  "https://iten-marketplace.vercel.app/",
+  "https://iten-marketplace.vercel.app",
+  "https://iten-marketplace-vendor.vercel.app",
 ];
 
 app.use(

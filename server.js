@@ -29,6 +29,7 @@ const allowedOrigins = [
   "http://localhost:3002",
   "https://iten-marketplace.vercel.app",
   "https://iten-marketplace-vendor.vercel.app",
+  "https://iten-marketplace-admin.vercel.app/",
 ];
 
 app.use(

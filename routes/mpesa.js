@@ -1,16 +1,33 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize } = require("../middleware/auth");
 const {
-  initiateOrderPayment, initiateSubscriptionPayment,
-  orderPaymentCallback, subscriptionPaymentCallback,
+  initiateOrderPayment,
+  orderPaymentCallback,
+  retryOrderPayment,
   checkPaymentStatus,
-} = require('../controllers/mpesaController');
+  queryPaymentStatus,
+} = require("../controllers/mpesaController");
 
-router.post('/order', authenticate, authorize('customer'), initiateOrderPayment);
-router.post('/subscription', authenticate, authorize('vendor'), initiateSubscriptionPayment);
-router.post('/callback/order', orderPaymentCallback);
-router.post('/callback/subscription', subscriptionPaymentCallback);
-router.get('/status/:checkoutRequestId', authenticate, checkPaymentStatus);
+// Customer order payments
+router.post(
+  "/order-payment",
+  authenticate,
+  authorize("customer"),
+  initiateOrderPayment,
+);
+router.post(
+  "/retry-payment",
+  authenticate,
+  authorize("customer"),
+  retryOrderPayment,
+);
+
+// M-Pesa callbacks (no auth - called by Safaricom)
+router.post("/callback/order", orderPaymentCallback);
+
+// Payment status
+router.get("/status/:checkoutRequestId", authenticate, checkPaymentStatus);
+router.get("/query/:checkoutRequestId", authenticate, queryPaymentStatus);
 
 module.exports = router;

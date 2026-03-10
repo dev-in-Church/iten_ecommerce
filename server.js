@@ -13,6 +13,7 @@ const productRoutes = require("./routes/products");
 const cartRoutes = require("./routes/cart");
 const orderRoutes = require("./routes/orders");
 const mpesaRoutes = require("./routes/mpesa");
+const paymentRoutes = require("./routes/payments");
 const vendorRoutes = require("./routes/vendor");
 const adminRoutes = require("./routes/admin");
 
@@ -69,6 +70,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/mpesa", mpesaRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api/vendor", vendorRoutes);
 app.use("/api/admin", adminRoutes);
 

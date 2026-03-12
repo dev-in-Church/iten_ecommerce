@@ -31,6 +31,9 @@ const allowedOrigins = [
   "https://iten-marketplace.vercel.app",
   "https://iten-marketplace-vendor.vercel.app",
   "https://iten-marketplace-admin.vercel.app",
+  "https://runnermkt.sporttechies.com",
+  "https://vendorcenter.sporttechies.com",
+  "https://admin.runnermkt.sporttechies.com",
 ];
 
 app.use(

@@ -5,6 +5,12 @@ const { v4: uuidv4 } = require("uuid");
 const createOrder = async (req, res) => {
   const client = await getClient();
   try {
+    console.log("[v0] createOrder: req.user =", {
+      id: req.user.id,
+      role: req.user.role,
+      email: req.user.email,
+    });
+
     await client.query("BEGIN");
     const {
       shippingAddress,
@@ -24,6 +30,8 @@ const createOrder = async (req, res) => {
       [req.user.id],
     );
 
+    console.log("[v0] createOrder: cart items found =", cartRes.rows.length);
+
     if (cartRes.rows.length === 0) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Your cart is empty." });
@@ -36,9 +44,11 @@ const createOrder = async (req, res) => {
     for (const item of cartRes.rows) {
       if (item.stock_qty < item.quantity) {
         await client.query("ROLLBACK");
-        return res.status(400).json({
-          error: `Insufficient stock for ${item.name}. Only ${item.stock_qty} available.`,
-        });
+        return res
+          .status(400)
+          .json({
+            error: `Insufficient stock for ${item.name}. Only ${item.stock_qty} available.`,
+          });
       }
 
       const totalPrice = parseFloat(item.price) * item.quantity;

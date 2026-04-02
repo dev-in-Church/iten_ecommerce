@@ -6,14 +6,25 @@ const PLATFORM_COMMISSION_RATE = 10; // 10% commission on sales
 // Get vendor dashboard stats
 const getDashboard = async (req, res) => {
   try {
+    console.log("[v0] getDashboard: userId =", req.user.id);
+
     const vp = await query("SELECT * FROM vendor_profiles WHERE user_id = $1", [
       req.user.id,
     ]);
+    console.log("[v0] getDashboard: vendor profile rows =", vp.rows.length);
+
     if (vp.rows.length === 0)
       return res.status(404).json({ error: "Vendor profile not found." });
     const vendorId = vp.rows[0].id;
     const commissionRate =
       vp.rows[0].commission_rate || PLATFORM_COMMISSION_RATE;
+
+    console.log(
+      "[v0] getDashboard: vendorId =",
+      vendorId,
+      "commissionRate =",
+      commissionRate,
+    );
 
     const [products, orders, revenue] = await Promise.all([
       query(
@@ -21,16 +32,25 @@ const getDashboard = async (req, res) => {
         [vendorId],
       ),
       query(
-        `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE oi.status = 'pending') as pending, COUNT(*) FILTER (WHERE oi.status = 'delivered') as delivered
-             FROM order_items oi WHERE oi.vendor_id = $1`,
+        `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'pending') as pending, COUNT(*) FILTER (WHERE status = 'delivered') as delivered
+             FROM order_items WHERE vendor_id = $1`,
         [vendorId],
       ),
       query(
-        `SELECT COALESCE(SUM(oi.total_price), 0) as total_revenue FROM order_items oi
-             JOIN orders o ON oi.order_id = o.id WHERE oi.vendor_id = $1 AND o.payment_status = 'paid'`,
+        `SELECT COALESCE(SUM(total_price), 0) as total_revenue FROM order_items
+             WHERE vendor_id = $1 AND order_id IN (SELECT id FROM orders WHERE payment_status = 'paid')`,
         [vendorId],
       ),
     ]);
+
+    console.log(
+      "[v0] getDashboard: products =",
+      products.rows[0],
+      "orders =",
+      orders.rows[0],
+      "revenue =",
+      revenue.rows[0],
+    );
 
     const totalRevenue = parseFloat(revenue.rows[0].total_revenue);
     const platformCommission = totalRevenue * (commissionRate / 100);
@@ -51,7 +71,7 @@ const getDashboard = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Vendor dashboard error:", err);
+    console.error("[v0] Vendor dashboard error:", err.message);
     res.status(500).json({ error: "Failed to load dashboard." });
   }
 };
@@ -92,7 +112,6 @@ const createProduct = async (req, res) => {
     if (vp.rows.length === 0)
       return res.status(404).json({ error: "Vendor profile not found." });
 
-    // Vendors can add products freely - no subscription check needed
     const {
       name,
       description,
@@ -110,6 +129,8 @@ const createProduct = async (req, res) => {
     } = req.body;
     if (!name || !price)
       return res.status(400).json({ error: "Name and price are required." });
+    if (!thumbnail)
+      return res.status(400).json({ error: "Product image is required." });
 
     const slug =
       name
@@ -134,7 +155,7 @@ const createProduct = async (req, res) => {
         quantity || 0,
         brand || null,
         images || "{}",
-        thumbnail || null,
+        thumbnail,
         tags || "{}",
         specifications ? JSON.stringify(specifications) : "{}",
         sku || null,
@@ -142,7 +163,7 @@ const createProduct = async (req, res) => {
     );
     res.status(201).json({ product: result.rows[0] });
   } catch (err) {
-    console.error("Create product error:", err);
+    console.error("[v0] Create product error:", err);
     res.status(500).json({ error: "Failed to create product." });
   }
 };

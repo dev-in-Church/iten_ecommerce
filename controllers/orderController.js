@@ -1,5 +1,6 @@
 const { query, getClient } = require("../config/database");
 const { v4: uuidv4 } = require("uuid");
+const { createNotifications } = require("./notificationController");
 
 // Create order (starts with 'pending' status, payment is separate)
 const createOrder = async (req, res) => {
@@ -129,6 +130,20 @@ const createOrder = async (req, res) => {
     ]);
 
     await client.query("COMMIT");
+
+    // Get unique vendor IDs from order items
+    const vendorIds = [...new Set(orderItems.map((item) => item.vendorId))];
+
+    // Send notifications asynchronously (don't block response)
+    createNotifications(
+      order.id,
+      order.order_number,
+      req.user.id,
+      vendorIds,
+      total,
+    ).catch((err) => {
+      console.error("[v0] Failed to send notifications:", err);
+    });
 
     res.status(201).json({
       order: { ...order, items: orderItems },

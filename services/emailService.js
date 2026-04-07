@@ -48,7 +48,7 @@ const sendVendorOrderNotification = async (vendor) => {
         </div>
 
         <p style="margin-top: 20px; color: #666;">Please prepare the items for shipment and update the order status.</p>
-        <p>Thank you for using ItenGear!</p>
+        <p>Thank you for using RunnerMKT!</p>
       </div>
     `;
 
@@ -77,6 +77,8 @@ const sendAdminOrderNotification = async (adminEmail, order) => {
         <td style="padding: 10px; border: 1px solid #ddd;">${item.productName}</td>
         <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">${item.quantity}</td>
         <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.vendorName || "N/A"}</td>
+        <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.vendorEmail || "N/A"}</td>
+        <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.vendorPhone || "N/A"}</td>
       </tr>
     `,
       )
@@ -99,6 +101,8 @@ const sendAdminOrderNotification = async (adminEmail, order) => {
               <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Product</th>
               <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Qty</th>
               <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Vendor</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Vendor Email</th>
+              <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Vendor Phone</th>
             </tr>
           </thead>
           <tbody>
@@ -187,13 +191,13 @@ const sendCustomerOrderConfirmation = async (customer) => {
             <h4 style="margin-top: 0;">Delivery Information</h4>
             <p>Delivery Address: ${customer.shippingAddress}</p>
             <p>Contact Number: ${customer.shippingPhone}</p>
-            <p>Estimated Delivery: Within 3-5 business days</p>
+            <p>Estimated Delivery: Within 3-12 hours</p>
           </div>
 
           <p style="margin-top: 20px; color: #666; font-size: 12px;">
             You will receive updates about your order via email. If you have any questions, please contact us.
           </p>
-          <p style="color: #28a745; font-weight: bold;">Thank you for shopping with ItenGear!</p>
+          <p style="color: #28a745; font-weight: bold;">Thank you for shopping with RunnerMKT!</p>
         </div>
       </div>
     `;
@@ -201,7 +205,7 @@ const sendCustomerOrderConfirmation = async (customer) => {
     const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: customer.email,
-      subject: `Order Confirmation #${customer.orderNumber} - ItenGear`,
+      subject: `Order Confirmation #${customer.orderNumber} - RunnerMKT`,
       html: html,
     });
 

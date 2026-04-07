@@ -6,7 +6,13 @@ const initializePayment = async (req, res) => {
   try {
     const { orderId } = req.body;
 
+    console.log("[v0] Initialize payment request:", {
+      orderId,
+      userId: req.user?.id,
+    });
+
     if (!orderId) {
+      console.log("[v0] Missing orderId in request body");
       return res.status(400).json({ error: "Order ID is required." });
     }
 
@@ -17,18 +23,27 @@ const initializePayment = async (req, res) => {
     );
 
     if (orderRes.rows.length === 0) {
+      console.log("[v0] Order not found:", { orderId, userId: req.user.id });
       return res.status(404).json({ error: "Order not found." });
     }
 
     const order = orderRes.rows[0];
+    console.log("[v0] Found order:", {
+      orderId,
+      orderNumber: order.order_number,
+      total: order.total,
+    });
 
     if (order.payment_status === "paid") {
+      console.log("[v0] Order already paid");
       return res.status(400).json({ error: "Order already paid." });
     }
 
     const amount = Math.round(parseFloat(order.total) * 100); // Convert to cents
     const email = req.user.email;
     const reference = `order-${orderId.slice(0, 8)}-${Date.now()}`;
+
+    console.log("[v0] Paystack init data:", { email, amount, reference });
 
     // Call Paystack API
     const paystackData = {
@@ -61,6 +76,12 @@ const initializePayment = async (req, res) => {
       },
     };
 
+    console.log(
+      "[v0] Sending to Paystack with key prefix:",
+      process.env.PAYSTACK_SECRET_KEY?.substring(0, 10),
+    );
+    console.log("[v0] Request payload:", JSON.stringify(paystackData, null, 2));
+
     const paystackReq = https.request(options, (paystackRes) => {
       let data = "";
       paystackRes.on("data", (chunk) => {
@@ -70,57 +91,213 @@ const initializePayment = async (req, res) => {
       paystackRes.on("end", () => {
         try {
           const body = JSON.parse(data);
+          console.log(
+            "[v0] Paystack raw response body:",
+            JSON.stringify(body, null, 2),
+          );
+          console.log("[v0] Paystack response data fields:", {
+            status: body.status,
+            statusCode: paystackRes.statusCode,
+            message: body.message,
+            // Log the exact field names Paystack returns
+            dataKeys: body.data ? Object.keys(body.data) : [],
+            access_code: body.data?.access_code,
+            authorization_url: body.data?.authorization_url,
+            reference: body.data?.reference,
+          });
+
           if (body.status) {
+            console.log("[v0] Payment initialized successfully");
+
+            // Use the exact field names from Paystack's response
+            const accessCode = body.data.access_code;
+            const authorizationUrl = body.data.authorization_url;
+            const txReference = body.data.reference || reference;
+
+            console.log("[v0] Extracted values:", {
+              accessCode,
+              authorizationUrl,
+              txReference,
+            });
+
+            if (!accessCode) {
+              console.error(
+                "[v0] WARNING: access_code is missing from Paystack response!",
+              );
+            }
+
             // Store payment reference in database for verification later
             query(
               `INSERT INTO payments (user_id, order_id, payment_type, amount, currency, status, reference, method)
                VALUES ($1, $2, 'order', $3, 'KES', 'pending', $4, 'paystack')`,
-              [req.user.id, orderId, parseFloat(order.total), reference],
+              [req.user.id, orderId, parseFloat(order.total), txReference],
             ).catch((err) =>
-              console.error("Error storing payment record:", err),
+              console.error("[v0] Error storing payment record:", err),
             );
 
             res.json({
               status: true,
               data: {
-                reference,
-                authorizationUrl: body.data.authorization_url,
-                accessCode: body.data.access_code,
+                reference: txReference,
+                authorizationUrl,
+                accessCode,
               },
               message: "Authorization URL created",
             });
           } else {
-            res
-              .status(400)
-              .json({ error: "Failed to initialize Paystack payment." });
+            console.log("[v0] Paystack initialization failed:", body);
+            res.status(400).json({
+              error: body.message || "Failed to initialize Paystack payment.",
+            });
           }
         } catch (err) {
-          console.error("Paystack response parse error:", err);
+          console.error("[v0] Paystack response parse error:", err.message);
+          console.error("[v0] Raw response data:", data);
           res.status(500).json({ error: "Payment initialization failed." });
         }
       });
     });
 
     paystackReq.on("error", (err) => {
-      console.error("Paystack API error:", err);
+      console.error("[v0] Paystack API error:", err.message);
       res.status(500).json({ error: "Payment initialization failed." });
     });
 
     paystackReq.write(JSON.stringify(paystackData));
     paystackReq.end();
   } catch (err) {
-    console.error("Payment init error:", err);
-    res.status(500).json({ error: "Payment initialization failed." });
+    console.error("[v0] Payment init error:", err.message);
+    res
+      .status(500)
+      .json({ error: "Payment initialization failed: " + err.message });
+  }
+};
+
+// Add this new function to your paystackController.js
+const initializeInlinePayment = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+
+    console.log("[v0] Initialize inline payment request:", { orderId });
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
+    }
+
+    // Get order
+    const orderRes = await query(
+      "SELECT * FROM orders WHERE id = $1 AND user_id = $2",
+      [orderId, req.user.id],
+    );
+
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const order = orderRes.rows[0];
+
+    if (order.payment_status === "paid") {
+      return res.status(400).json({ error: "Order already paid." });
+    }
+
+    const amount = Math.round(parseFloat(order.total) * 100);
+    const email = req.user.email;
+    const reference = `order-${orderId.slice(0, 8)}-${Date.now()}`;
+
+    // Call Paystack API for inline/embedded payment
+    const paystackData = {
+      email,
+      amount,
+      metadata: {
+        orderId,
+        orderNumber: order.order_number,
+        userId: req.user.id,
+      },
+      reference,
+    };
+
+    const options = {
+      hostname: "api.paystack.co",
+      port: 443,
+      path: "/transaction/initialize",
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+    };
+
+    const paystackReq = https.request(options, (paystackRes) => {
+      let data = "";
+      paystackRes.on("data", (chunk) => {
+        data += chunk;
+      });
+
+      paystackRes.on("end", () => {
+        try {
+          const body = JSON.parse(data);
+
+          if (body.status) {
+            // Return access_code for inline.js
+            res.json({
+              status: true,
+              data: {
+                reference: body.data.reference,
+                accessCode: body.data.access_code,
+              },
+              message: "Inline payment initialized",
+            });
+          } else {
+            res.status(400).json({
+              error: body.message || "Failed to initialize Paystack payment.",
+            });
+          }
+        } catch (err) {
+          console.error("[v0] Paystack response parse error:", err.message);
+          res.status(500).json({ error: "Payment initialization failed." });
+        }
+      });
+    });
+
+    paystackReq.on("error", (err) => {
+      console.error("[v0] Paystack API error:", err.message);
+      res.status(500).json({ error: "Payment initialization failed." });
+    });
+
+    paystackReq.write(JSON.stringify(paystackData));
+    paystackReq.end();
+  } catch (err) {
+    console.error("[v0] Payment init error:", err.message);
+    res
+      .status(500)
+      .json({ error: "Payment initialization failed: " + err.message });
   }
 };
 
 // Verify Paystack payment
 const verifyPayment = async (req, res) => {
   try {
-    const { reference } = req.query;
+    const { reference, orderId } = req.query;
 
-    if (!reference) {
-      return res.status(400).json({ error: "Payment reference is required." });
+    console.log("[v0] Verifying payment:", {
+      reference,
+      orderId,
+      userId: req.user?.id,
+    });
+
+    if (!reference || !orderId) {
+      console.log("[v0] Missing parameters");
+      return res.status(400).json({
+        status: false,
+        error: "Payment reference and orderId are required.",
+      });
+    }
+
+    if (!req.user || !req.user.id) {
+      console.log("[v0] User not authenticated");
+      return res
+        .status(401)
+        .json({ status: false, error: "User not authenticated." });
     }
 
     const options = {
@@ -133,6 +310,8 @@ const verifyPayment = async (req, res) => {
       },
     };
 
+    console.log("[v0] Calling Paystack to verify:", { reference });
+
     const paystackReq = https.request(options, (paystackRes) => {
       let data = "";
       paystackRes.on("data", (chunk) => {
@@ -142,10 +321,13 @@ const verifyPayment = async (req, res) => {
       paystackRes.on("end", async () => {
         try {
           const body = JSON.parse(data);
+          console.log("[v0] Paystack verification response:", {
+            status: body.status,
+            transactionStatus: body.data?.status,
+          });
 
           if (body.status && body.data.status === "success") {
-            const { metadata, reference: paystackRef } = body.data;
-            const orderId = metadata.orderId;
+            const paystackRef = body.data.reference;
 
             // Update order payment status
             const client = await getClient();
@@ -154,21 +336,50 @@ const verifyPayment = async (req, res) => {
 
               // Get order
               const orderRes = await client.query(
-                "SELECT * FROM orders WHERE id = $1",
-                [orderId],
+                "SELECT * FROM orders WHERE id = $1 AND user_id = $2",
+                [orderId, req.user.id],
               );
               if (orderRes.rows.length === 0) {
                 await client.query("ROLLBACK");
-                return res.status(404).json({ error: "Order not found." });
+                console.log("[v0] Order not found:", {
+                  orderId,
+                  userId: req.user.id,
+                });
+                return res
+                  .status(404)
+                  .json({ status: false, error: "Order not found." });
               }
 
               const order = orderRes.rows[0];
+              console.log("[v0] Found order:", {
+                orderId,
+                orderNumber: order.order_number,
+                total: order.total,
+              });
 
               // Update payment record
               await client.query(
-                "UPDATE payments SET status = 'completed' WHERE reference = $1",
-                [paystackRef],
+                `INSERT INTO payments (user_id, order_id, payment_type, amount, currency, status, method, reference, description, metadata)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (reference) DO UPDATE SET status = 'completed', method = 'card'`,
+                [
+                  req.user.id,
+                  orderId,
+                  "order",
+                  order.total,
+                  "KES",
+                  "completed",
+                  "card",
+                  paystackRef,
+                  "Paystack card payment",
+                  JSON.stringify({
+                    paystackId: body.data.id,
+                    cardType: body.data.authorization?.card_type,
+                  }),
+                ],
               );
+
+              console.log("[v0] Payment record updated");
 
               // Update order
               await client.query(
@@ -176,10 +387,16 @@ const verifyPayment = async (req, res) => {
                 [orderId],
               );
 
+              console.log("[v0] Order updated to confirmed");
+
               await client.query("COMMIT");
 
+              console.log(
+                "[v0] Payment verified successfully, order confirmed",
+              );
               res.json({
                 status: true,
+                success: true,
                 message: "Payment verified successfully",
                 order: {
                   id: order.id,
@@ -190,31 +407,42 @@ const verifyPayment = async (req, res) => {
               });
             } catch (err) {
               await client.query("ROLLBACK");
+              console.error(
+                "[v0] Database error during verification:",
+                err.message,
+              );
               throw err;
             } finally {
               client.release();
             }
           } else {
-            res
-              .status(400)
-              .json({ status: false, message: "Payment verification failed." });
+            console.log("[v0] Payment not successful from Paystack:", body);
+            res.status(400).json({
+              status: false,
+              error: body.message || "Payment verification failed.",
+            });
           }
         } catch (err) {
-          console.error("Paystack verify error:", err);
-          res.status(500).json({ error: "Payment verification failed." });
+          console.error("[v0] Error parsing Paystack response:", err.message);
+          res
+            .status(500)
+            .json({ status: false, error: "Payment verification error." });
         }
       });
     });
 
     paystackReq.on("error", (err) => {
-      console.error("Paystack API error:", err);
-      res.status(500).json({ error: "Payment verification failed." });
+      console.error("[v0] Paystack API error:", err.message);
+      res.status(500).json({ status: false, error: "Paystack API error." });
     });
 
     paystackReq.end();
   } catch (err) {
-    console.error("Verify payment error:", err);
-    res.status(500).json({ error: "Payment verification failed." });
+    console.error("[v0] Verify payment error:", err.message);
+    res.status(500).json({
+      status: false,
+      error: "Payment verification failed: " + err.message,
+    });
   }
 };
 
@@ -296,125 +524,9 @@ const webhookCallback = async (req, res) => {
   }
 };
 
-// Charge card with inline payment details
-const chargeCard = async (req, res) => {
-  try {
-    const {
-      reference,
-      orderId,
-      cardNumber,
-      expiryMonth,
-      expiryYear,
-      cvv,
-      email,
-    } = req.body;
-
-    console.log("[v0] Charge card request received:", {
-      reference,
-      orderId,
-      email,
-    });
-
-    if (
-      !reference ||
-      !orderId ||
-      !cardNumber ||
-      !expiryMonth ||
-      !expiryYear ||
-      !cvv ||
-      !email
-    ) {
-      console.log("[v0] Missing fields:", {
-        reference,
-        orderId,
-        cardNumber,
-        expiryMonth,
-        expiryYear,
-        cvv,
-        email,
-      });
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing required fields." });
-    }
-
-    // Get order to verify it exists
-    const orderRes = await query(
-      "SELECT * FROM orders WHERE id = $1 AND user_id = $2",
-      [orderId, req.user.id],
-    );
-
-    console.log("[v0] Order query result:", {
-      orderId,
-      userId: req.user.id,
-      found: orderRes.rows.length > 0,
-    });
-
-    if (orderRes.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Order not found." });
-    }
-
-    const order = orderRes.rows[0];
-    const amount = Math.round(parseFloat(order.total) * 100);
-
-    console.log("[v0] Processing charge:", { orderId, amount, email });
-
-    // In test mode, we simulate the charge. In production, use Paystack's tokenization
-    // For now, we'll record the payment and mark order as confirmed
-
-    // Check if payment record exists with this reference
-    const paymentRes = await query(
-      "SELECT * FROM payments WHERE reference = $1",
-      [reference],
-    );
-
-    if (paymentRes.rows.length > 0) {
-      // Payment record exists, update it
-      await query(
-        `UPDATE payments SET status = 'completed', method = 'card', 
-         metadata = jsonb_set(metadata, '{cardLast4}', to_jsonb($1::text))
-         WHERE reference = $2`,
-        [cardNumber.slice(-4), reference],
-      );
-    } else {
-      // Create new payment record
-      await query(
-        `INSERT INTO payments (user_id, order_id, payment_type, amount, currency, 
-         phone_number, status, method, reference, description, metadata)
-         VALUES ($1, $2, 'order', $3, $4, $5, 'completed', 'card', $6, 'Card payment', $7)`,
-        [
-          req.user.id,
-          orderId,
-          amount / 100,
-          "KES",
-          email,
-          reference,
-          JSON.stringify({ cardLast4: cardNumber.slice(-4), email }),
-        ],
-      );
-    }
-
-    // Update order status to confirmed
-    await query(
-      "UPDATE orders SET payment_status = 'paid', payment_method = 'card', status = 'confirmed', updated_at = NOW() WHERE id = $1",
-      [orderId],
-    );
-
-    console.log("[v0] Payment completed successfully");
-    res.json({ success: true, message: "Payment successful." });
-  } catch (err) {
-    console.error("[v0] Card charge error:", err.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Card charge failed: " + err.message });
-  }
-};
-
 module.exports = {
-  initializePayment,
+  initializePayment, // For redirect flow
+  initializeInlinePayment, // For inline modal flow
   verifyPayment,
   webhookCallback,
-  chargeCard,
 };

@@ -4,7 +4,6 @@ const {
   initializePayment,
   verifyPayment,
   webhookCallback,
-  chargeCard,
 } = require("../controllers/paystackController");
 const { query } = require("../config/database");
 const router = express.Router();
@@ -16,21 +15,17 @@ router.post(
   authorize("customer"),
   initializePayment,
 );
+
 router.get(
   "/paystack-verify",
   authenticate,
   authorize("customer"),
   verifyPayment,
 );
-router.post("/paystack-callback", webhookCallback);
-router.post(
-  "/paystack-charge",
-  authenticate,
-  authorize("customer"),
-  chargeCard,
-);
 
-// Process card payment (kept for backward compatibility - use Paystack)
+router.post("/paystack-callback", webhookCallback);
+
+// Process card payment (kept for backward compatibility)
 router.post("/card", authenticate, authorize("customer"), async (req, res) => {
   try {
     const { orderId } = req.body;
@@ -40,12 +35,10 @@ router.post("/card", authenticate, authorize("customer"), async (req, res) => {
     }
 
     // Use Paystack initialization instead
-    return res
-      .status(400)
-      .json({
-        error:
-          "Please use Paystack payment gateway. Call /api/payments/paystack-init instead.",
-      });
+    return res.status(400).json({
+      error:
+        "Please use Paystack payment gateway. Call /api/payments/paystack-init instead.",
+    });
   } catch (err) {
     console.error("Card payment error:", err);
     res.status(500).json({ error: "Payment processing failed." });

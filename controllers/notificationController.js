@@ -18,7 +18,7 @@ const createNotifications = async (
 
     // Get customer email and details
     const customerRes = await query(
-      "SELECT email, first_name, last_name FROM users WHERE id = $1",
+      "SELECT email, first_name, last_name, phone FROM users WHERE id = $1",
       [userId],
     );
     const customerEmail = customerRes.rows[0]?.email;
@@ -55,6 +55,7 @@ const createNotifications = async (
           vendorId: item.vendor_profile_id,
           vendorEmail: item.vendor_email,
           vendorName: item.vendor_name,
+          vendorPhone: item.vendor_phone,
           items: [],
         };
       }

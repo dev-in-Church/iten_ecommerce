@@ -45,11 +45,9 @@ const createOrder = async (req, res) => {
     for (const item of cartRes.rows) {
       if (item.stock_qty < item.quantity) {
         await client.query("ROLLBACK");
-        return res
-          .status(400)
-          .json({
-            error: `Insufficient stock for ${item.name}. Only ${item.stock_qty} available.`,
-          });
+        return res.status(400).json({
+          error: `Insufficient stock for ${item.name}. Only ${item.stock_qty} available.`,
+        });
       }
 
       const totalPrice = parseFloat(item.price) * item.quantity;
@@ -67,7 +65,7 @@ const createOrder = async (req, res) => {
     }
 
     // Calculate totals
-    const shippingFee = subtotal > 5000 ? 0 : 300;
+    const shippingFee = subtotal > 5000 ? 0 : 0; ////was 300
     const tax = 0;
     const total = subtotal + shippingFee + tax;
     const orderNumber = `IG-${Date.now().toString(36).toUpperCase()}-${uuidv4().substring(0, 4).toUpperCase()}`;

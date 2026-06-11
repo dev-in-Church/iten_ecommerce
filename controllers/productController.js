@@ -310,7 +310,10 @@ const getProducts = async (req, res) => {
       whereClause += " AND p.is_featured = true";
     }
 
-    let orderClause = "ORDER BY p.created_at DESC";
+    // REAL-WORLD HYBRID SYSTEM: Marketplace defaults to Verified Vendors + Best Selling + Recency
+    let orderClause =
+      "ORDER BY vp.is_verified DESC, p.total_sold DESC, p.created_at DESC";
+
     if (sort === "price_asc") orderClause = "ORDER BY p.price ASC";
     else if (sort === "price_desc") orderClause = "ORDER BY p.price DESC";
     else if (sort === "popular") orderClause = "ORDER BY p.total_sold DESC";
@@ -389,12 +392,29 @@ const getProducts = async (req, res) => {
           (p.brand && p.brand.toLowerCase().includes(search.toLowerCase())),
       );
     if (featured === "true") filtered = filtered.filter((p) => p.is_featured);
-    // Apply sorting
-    if (sort === "price_asc") filtered.sort((a, b) => a.price - b.price);
-    else if (sort === "price_desc") filtered.sort((a, b) => b.price - a.price);
-    else if (sort === "popular")
+
+    // Apply sorting (with fallback logic matching the real-world mix)
+    if (sort === "price_asc") {
+      filtered.sort((a, b) => a.price - b.price);
+    } else if (sort === "price_desc") {
+      filtered.sort((a, b) => b.price - a.price);
+    } else if (sort === "popular") {
       filtered.sort((a, b) => b.total_sold - a.total_sold);
-    else if (sort === "rating") filtered.sort((a, b) => b.rating - a.rating);
+    } else if (sort === "rating") {
+      filtered.sort((a, b) => b.rating - a.rating);
+    } else if (sort === "newest") {
+      // Mock items don't have true timestamps, so sort mock IDs backwards as a proxy
+      filtered.sort((a, b) => b.id.localeCompare(a.id));
+    } else {
+      // Default Mock Hybrid: Sort by verification status first, then highest conversion items
+      filtered.sort((a, b) => {
+        if (a.vendor_verified !== b.vendor_verified) {
+          return b.vendor_verified ? 1 : -1;
+        }
+        return b.total_sold - a.total_sold;
+      });
+    }
+
     const start = (page - 1) * limit;
     const paged = filtered.slice(start, start + parseInt(limit));
     res.json({
